@@ -4,16 +4,17 @@ import com.turbolearn.backend.job.Job;
 import com.turbolearn.backend.job.JobRepository;
 import com.turbolearn.backend.job.JobStatus;
 import com.turbolearn.backend.tenant.TenantContext;
+import okhttp3.*;
+import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.File;
 import java.io.IOException;
 import java.time.Instant;
-import java.util.UUID;
+import java.util.Objects;
 
 @Service
 public class ResourceService {
@@ -24,6 +25,8 @@ public class ResourceService {
     private JobRepository jobRepository;
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
+
+    private final OkHttpClient httpClient= new OkHttpClient.Builder().build();
 
     @Value("${redis.queue.name}")
     private String queueName;
@@ -39,18 +42,53 @@ public class ResourceService {
     }
 
 
-    public String saveFileToDisk(MultipartFile file) throws IOException{
-        String originalFileName = file.getOriginalFilename();
+    public String saveFileToCloud(MultipartFile file, String ownerId) throws IOException{
+        byte[] fileBytes = file.getBytes();
 
-        String uniqueFileName = UUID.randomUUID() + "-" + originalFileName;
+        RequestBody fileBody = RequestBody.create(
+                fileBytes,
+                MediaType.parse(Objects.requireNonNull(file.getContentType()))
+        );
 
-        File destination = new File(uploadDir + File.separator + uniqueFileName);
+        MultipartBody requestBody = new MultipartBody.Builder().
+                setType(MultipartBody.FORM)
+                .addFormDataPart(
+                        "userId",
+                        ownerId
+                )
+                .addFormDataPart(
+                        "file",
+                        file.getOriginalFilename(),
+                        fileBody
+                ).
+                build();
 
-        destination.getParentFile().mkdirs();
+        Request request = new Request.Builder()
+                .url(uploadDir+"files/upload")
+                .post(requestBody)
+                .build();
 
-        file.transferTo(destination);
+        System.out.println(requestBody.parts());
 
-        return destination.getAbsolutePath();
+        try(Response response = httpClient.newCall(request).execute()){
+            if(!response.isSuccessful()){
+                String errorBody = response.body().string();
+
+                throw new RuntimeException(
+                        "Cloud upload failed. Code=" + response.code() +
+                                " Body=" + errorBody
+                );
+            }
+
+            String responseBody = response.body().string();
+
+            JSONObject json = new JSONObject(responseBody);
+
+            System.out.println(json.getString("url"));
+
+            return uploadDir.concat(json.getString("url"));
+        }
+
     }
 
     public Resource createResourceRecord(String absolutePath,
@@ -63,7 +101,7 @@ public class ResourceService {
         res.setTenantId(tenantId);
         res.setOwnerId(ownerId);
         res.setTitle(originalName);
-        res.setType("pdf");
+        res.setType(res.getType());
         res.setStoragePath(absolutePath);
         res.setSize(size);
         res.setStatus(ResourceStatus.UPLOADED);
@@ -90,10 +128,10 @@ public class ResourceService {
 
     public Resource handleUpload(MultipartFile file,String title, String jobType, String ownerId){
         try {
-            String absolutePath = saveFileToDisk(file);
+            String cloudUrl = saveFileToCloud(file, ownerId);
 
             Resource resource = createResourceRecord(
-                    absolutePath,
+                    cloudUrl,
                     file.getOriginalFilename(),
                     file.getSize(),
                     ownerId

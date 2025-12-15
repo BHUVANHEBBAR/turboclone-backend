@@ -9,7 +9,6 @@ import com.turbolearn.backend.resource.Resource;
 import com.turbolearn.backend.resource.ResourceRepository;
 import com.turbolearn.backend.tenant.TenantContext;
 import com.turbolearn.backend.job.JobStatus;
-import com.turbolearn.backend.utils.PdfUtil;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -77,67 +76,42 @@ public class JobWorker {
         }
 
 
-        String extracted ="";
-        String type = resource.getType() == null ? "" : resource.getType().toLowerCase();
 
-            if (type.equals("pdf")) {
-                extracted = PdfUtil.extractText(resource.getStoragePath());
-            } else if (type.equals("txt") || type.equals("md")) {
-                try {
-                    extracted = Files.readString(Path.of(resource.getStoragePath()));
-                } catch (Exception e) {
-                    // fallback
-                    extracted = "";
-                }
-            } else {
-                // fallback attempt: try reading as text file
-                try {
-                    extracted = Files.readString(Path.of(resource.getStoragePath()));
-                } catch (Exception e) {
-                    extracted = "";
-                }
-            }
-
-            if (extracted == null || extracted.isBlank()) {
-                // nothing to process: mark failed (or you could still set DONE with empty result)
-                markJobFailed(job, "no text extracted from resource");
-                return;
-            }
 
             // Choose prompt based on jobType (enum)
             String aiOutput;
             JobType jobType = job.getJobType() == null ? JobType.SUMMARY : job.getJobType();
 
-            switch (jobType) {
-                case SUMMARY -> {
-                    String prompt = PromptTemplates.summary(extracted);
-                    aiOutput = groqClientService.generate(prompt);
-                    Map<String,Object> result = new HashMap<>();
-                    result.put("summary", aiOutput.trim());
-                    job.setResult(result);
-                }
-                case FLASHCARDS -> {
-                    String prompt = PromptTemplates.flashcards(extracted);
-                    aiOutput = groqClientService.generate(prompt);
-                    Map<String,Object> result = new HashMap<>();
-                    // keep raw text under "raw" and also attempt small parse into list if output follows Q/A lines
-                    result.put("flashcards_raw", aiOutput.trim());
-                    result.put("flashcards_parsed", parseFlashcards(aiOutput));
-                    job.setResult(result);
-                }
-                case QUIZ -> {
-                    String prompt = PromptTemplates.quiz(extracted);
-                    aiOutput = groqClientService.generate(prompt);
-                    Map<String,Object> result = new HashMap<>();
-                    result.put("quiz_raw", aiOutput.trim());
-                    job.setResult(result);
-                }
-                default -> {
-                    Map<String,Object> result = new HashMap<>();
-                    result.put("error", "unsupported job type: " + jobType);
-                    job.setResult(result);
-                }
-            }
+//            switch (jobType) {
+//                case SUMMARY -> {
+//                    String prompt = PromptTemplates.summary(extracted);
+//                    aiOutput = groqClientService.generate(prompt);
+//                    Map<String,Object> result = new HashMap<>();
+//                    result.put("summary", aiOutput.trim());
+//                    job.setResult(result);
+//                }
+//                case FLASHCARDS -> {
+//                    String prompt = PromptTemplates.flashcards(extracted);
+//                    aiOutput = groqClientService.generate(prompt);
+//                    Map<String,Object> result = new HashMap<>();
+//                    // keep raw text under "raw" and also attempt small parse into list if output follows Q/A lines
+//                    result.put("flashcards_raw", aiOutput.trim());
+//                    result.put("flashcards_parsed", parseFlashcards(aiOutput));
+//                    job.setResult(result);
+//                }
+//                case QUIZ -> {
+//                    String prompt = PromptTemplates.quiz(extracted);
+//                    aiOutput = groqClientService.generate(prompt);
+//                    Map<String,Object> result = new HashMap<>();
+//                    result.put("quiz_raw", aiOutput.trim());
+//                    job.setResult(result);
+//                }
+//                default -> {
+//                    Map<String,Object> result = new HashMap<>();
+//                    result.put("error", "unsupported job type: " + jobType);
+//                    job.setResult(result);
+//                }
+//            }
 
         job.setStatus(JobStatus.DONE);
         job.setUpdatedAt(Instant.now());
