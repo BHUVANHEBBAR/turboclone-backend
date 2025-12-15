@@ -18,8 +18,8 @@ public class ResourceController {
 
     @PostMapping("/upload")
     public ResponseEntity<Object> uploadResource(@RequestPart("file") MultipartFile file,
-                                                 @RequestHeader(value = "X-User-ID", required = false) String ownerId,
-                                                 @RequestParam(value = "jobType", required = false, defaultValue = "FLASHCARDS") String jobType){
+                                                 @RequestHeader(value = "X-User-ID", required = true) String ownerId,
+                                                 @RequestParam(value = "jobType", required = false, defaultValue = "SUMMARY") String jobType){
 
         if(file == null || file.isEmpty()){
             return ResponseEntity.badRequest().body("File is required");
